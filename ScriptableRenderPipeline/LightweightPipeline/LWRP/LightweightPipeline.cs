@@ -689,21 +689,27 @@ namespace UnityEngine.Experimental.Rendering.LightweightPipeline
                 intermediateTexture = intermediateTexture || !LightweightUtils.PlatformSupportsMSAABackBuffer();
             }
 
+            if (m_Asset.ForceDepthPrepass())
+                configuration |= FrameRenderingConfiguration.DepthPrePass;
+
             if (m_RequireDepthTexture)
             {
-                bool supportsDepthCopy = m_CopyTextureSupport != CopyTextureSupport.None && m_Asset.CopyDepthShader.isSupported;
+                bool hasTex2dMS = SystemInfo.supportsMultisampledTextures != 0;
+                bool supportsDepthCopy = hasTex2dMS && (m_CopyTextureSupport != CopyTextureSupport.None || m_Asset.CopyDepthShader.isSupported);
 
-                // If we can't do a blit from an MSAA depth to resolve depth,
+                // If we can't do a depth copy,
                 // we use a depth prepass and whenever depth is needed we use the 1 sample depth from prepass.
                 // Screen space shadows require depth before opaque shading.
-                bool requiresDepthPrePass = (shadows && m_ShadowSettings.screenSpace) || !supportsDepthCopy || m_Asset.PreferDepthPrepassOverCopy();
-                m_DepthRenderBuffer = !shadows;
-                intermediateTexture = intermediateTexture || !shadows;
+                bool requiresDepthPrePass = (shadows && m_ShadowSettings.screenSpace) || !supportsDepthCopy;
+                m_DepthRenderBuffer = !requiresDepthPrePass;
+                intermediateTexture = intermediateTexture || !m_DepthRenderBuffer;
 
-                // If requiring a camera depth texture we need separate depth as it reads/write to depth at same time
-                // Post process doesn't need the copy
-                if (shadows || (!m_Asset.RequireDepthTexture && postProcessEnabled))
-                    configuration |= (requiresDepthPrePass) ? FrameRenderingConfiguration.DepthPrePass : FrameRenderingConfiguration.DepthCopy;
+                // Don't do a depth copy when it's only needed by postprocessing
+                if (supportsDepthCopy && (!m_Asset.RequireDepthTexture && postProcessEnabled))
+                    configuration |= FrameRenderingConfiguration.DepthCopy;
+
+                if (requiresDepthPrePass)
+                    configuration |= FrameRenderingConfiguration.DepthPrePass;
             }
 
             Rect cameraRect = m_CurrCamera.rect;
